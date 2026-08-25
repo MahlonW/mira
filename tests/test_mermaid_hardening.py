@@ -95,6 +95,54 @@ class TestHardenMermaidFlowcharts:
         assert "-.->" in out
         assert "==>" in out
 
+    def test_keeps_compact_arrow_typography(self):
+        """`A-->B` is the most common Mermaid typography. A dash-swallowing
+        node id (`A--`) used to leave `>B`, fail the edge regex, and drop
+        the whole diagram; the id must stop before the arrow's dashes."""
+        assert harden_mermaid("graph LR\n  A-->B") == "graph LR\n  A --> B"
+
+    def test_keeps_compact_arrow_chain(self):
+        assert harden_mermaid("graph LR\n  A-->B-->C") == "graph LR\n  A --> B --> C"
+
+    def test_keeps_compact_arrow_with_open_head(self):
+        assert harden_mermaid("graph LR\n  A--o B") == "graph LR\n  A --o B"
+
+    def test_keeps_dashed_node_id_before_arrow(self):
+        """A dash *inside* a node id (`a-b`) is part of the id, but the
+        arrow's dashes never join it."""
+        assert harden_mermaid("graph LR\n  a-b-->c") == "graph LR\n  a-b --> c"
+
+    def test_keeps_dashed_node_id_with_label(self):
+        out = harden_mermaid('graph LR\n  a-b["x"] --> c')
+        assert out == 'graph LR\n  a-b["x"] --> c'
+
+    def test_drops_reserved_end_as_node_id(self):
+        """`end` is Mermaid's reserved subgraph terminator: re-emitting it
+        as a bare node id yields a diagram the parser rejects. A plain node
+        named `end` has no label to quote it as, so the diagram is
+        rejected rather than guessed (matches the module's conservative
+        None-on-doubt policy)."""
+        assert harden_mermaid("graph LR\n  A --> end") is None
+        assert harden_mermaid("graph LR\n  end --> A") is None
+
+    def test_keeps_multiword_text_edges(self):
+        """`-- label -->` text-form arrows: a multi-word label used to hit a
+        dead regex branch and drop the diagram; it must round-trip."""
+        out = harden_mermaid("graph LR\n  A -- reads and writes --> B")
+        assert out == "graph LR\n  A -- reads and writes --> B"
+
+    def test_keeps_text_edge_arrowheads_and_rejects_invalid(self):
+        """A text edge may carry one arrowhead (`--o`/`--x`/`-->`); a
+        doubled head (`-->o`) is not a valid Mermaid closing token."""
+        assert harden_mermaid("graph LR\n  A -- uses -->o B") is None
+        assert harden_mermaid("graph LR\n  A -- uses --o B") == "graph LR\n  A -- uses --o B"
+
+    def test_dash_runs_stay_links_not_text_edges(self):
+        """A plain run of dashes is a link, never a text edge: the text-edge
+        branch must not swallow it with a dash as its 'label'."""
+        out = harden_mermaid("graph LR\n  A --- B\n  C ---- D")
+        assert out == "graph LR\n  A --- B\n  C ---- D"
+
     def test_preserves_classdef_and_classes(self):
         raw = 'graph LR\n  classDef cls fill:#f00\n  A["a"]:::cls --> B["b"]'
         out = harden_mermaid(raw)

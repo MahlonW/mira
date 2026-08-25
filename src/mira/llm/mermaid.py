@@ -73,9 +73,12 @@ def _clean_label(content: str) -> str:
 
 # ── flowcharts ───────────────────────────────────────────────────────
 
-# Node id: letters/digits/underscore, plus . / $ - (path-ish names are the
-# norm in LLM output). Must contain at least one letter.
-_NODE_ID = r"(?=[A-Za-z0-9_./$-]*[A-Za-z])[A-Za-z0-9_./$-]+"
+# Node id: letters/digits/underscore, plus . / $ (path-ish names are the
+# norm in LLM output), plus internal dashes (`a-b`). A dash only counts as
+# part of the id when followed by word characters (same guard as _SEQ_ID),
+# so a trailing dash never swallows the start of an arrow (`A-->B`,
+# `a-b-->c`). Must contain at least one letter.
+_NODE_ID = r"(?=[A-Za-z0-9_./$-]*[A-Za-z])[A-Za-z0-9_./$]+(?:-[A-Za-z0-9_]+)*"
 
 # Bare label content: no quotes, brackets, parens, braces, pipe.
 _BARE = r'(?!")[^"\\[\](){}|]+'
@@ -117,14 +120,23 @@ _NODE_RE = re.compile(
 )
 
 # Edge between two nodes.
+#   text-form arrow first: `-- imports -->`. The opening `--` must be
+#   followed by whitespace (a compact `--x`/`-->` is a plain arrow, never a
+#   text edge), and the label is a run of non-pipe, non-newline chars where
+#   a dash only counts as text when NOT followed by another dash (a
+#   dash-run is always the CLOSING `--`/`-->`/`--o`/`--x`, mirroring
+#   Mermaid's own lexer: EDGE_TEXT is `[^-]|\-(?!\-)+`). That keeps a plain
+#   link (`---`  `----`) and the compact `-->` out of the branch.
+#   The closing is `--`, `-->`, `--o`, or `--x` (at most one arrowhead),
+#   so `-- x -->o B` (a head after `>`) is not a valid closing and is
+#   rejected.
 #   plain arrow, optional arrowhead, optional |label|: -->  ==>  -.->  ~~~
-#   text-form arrow: -- imports -->
 _EDGE_RE = re.compile(
     r"\s*(?:"
+    r"--\s+(?P<tlabel>(?:[^|\-\n]|\-(?!-))+)\s*-{2,}(?P<ttail>[xo>]?)"
+    r"|"
     r"(?P<arrow>-\.+-+|~~+|=+|---+|--+)(?P<tail>[o>x])?"
     r"(?P<label>\s*\|\s*(?P<lab>\"[^\"]*\"|[^|\n]+?)\s*\|)?"
-    r"|"
-    r"-{2,}(?P<tlabel>[^|\n]+?)\s*-{1,2}(?P<ttail>[o>x])?"
     r")"
 )
 
@@ -166,6 +178,12 @@ def _parse_flow_line(line: str) -> str | None:
     while pos < len(line):
         m = _NODE_RE.match(line, pos)
         if not m:
+            return None
+        # `end` is a reserved word (the subgraph terminator), not a valid
+        # node id: re-emitting it unquoted yields a diagram Mermaid's own
+        # parser rejects. A plain node named `end` carries no label to
+        # quote it as, so reject the diagram rather than guess.
+        if m.group("id") == "end":
             return None
         parts.append(_reemit_node(m))
         rest = line[m.end() :]
