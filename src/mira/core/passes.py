@@ -514,9 +514,7 @@ async def generate_pr_summary(
     change_lines: list[str] = []
     for fc in walkthrough.file_changes:
         grp = fc.group or "General"
-        change_lines.append(
-            f"- [{grp}] {fc.path} ({fc.change_type.name}): {fc.description}"
-        )
+        change_lines.append(f"- [{grp}] {fc.path} ({fc.change_type.name}): {fc.description}")
 
     title_line = f"PR title: {pr_title}\n" if pr_title else ""
     desc_line = f"PR description: {pr_description[:400]}\n" if pr_description else ""
@@ -531,7 +529,8 @@ async def generate_pr_summary(
         "markdown bullets only, no HTML, no code fences.\n\n"
         f"{title_line}{desc_line}"
         f"Walkthrough summary: {walkthrough.summary}\n\n"
-        "## Changes\n\n" + "\n".join(change_lines)
+        "## Changes\n\n"
+        + "\n".join(change_lines)
         + "\n\nReturn just the grouped bullets — no preamble, no quotes."
     )
 

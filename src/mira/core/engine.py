@@ -97,9 +97,15 @@ def compose_pr_description(current_body: str, summary_block: str, mode: str) -> 
     if mode == "replace":
         return summary_block
     # append
-    if PR_SUMMARY_START in current_body and PR_SUMMARY_END in current_body:
-        before = current_body[: current_body.index(PR_SUMMARY_START)]
-        after = current_body[current_body.index(PR_SUMMARY_END) + len(PR_SUMMARY_END) :]
+    # Only treat the markers as a block boundary when START exists and a
+    # following END terminates it. A lone START or a lone/orphan END (e.g.
+    # END authored before START) falls back to append-at-end, keeping
+    # re-reviews idempotent.
+    start_pos = current_body.find(PR_SUMMARY_START)
+    end_pos = current_body.find(PR_SUMMARY_END, start_pos) if start_pos != -1 else -1
+    if end_pos != -1:
+        before = current_body[:start_pos]
+        after = current_body[end_pos + len(PR_SUMMARY_END) :]
         rebuilt = before.rstrip() + "\n\n" + summary_block
         if after.strip():
             rebuilt += "\n\n" + after.strip()
@@ -1562,7 +1568,15 @@ class ReviewEngine:
         walkthrough = await walkthrough_task
 
         pr_summary_block = ""
-        if self.config.review.pr_summary != "disable" and walkthrough is not None:
+        # Only generate when the result can actually be posted: the dry-run
+        # and stdin (no-provider) paths never write the description, so the
+        # indexing-tier LLM call would be discarded.
+        if (
+            self.config.review.pr_summary != "disable"
+            and walkthrough is not None
+            and not self.dry_run
+            and self.provider is not None
+        ):
             try:
                 pr_summary_block = await generate_pr_summary(
                     self.llm,
