@@ -140,6 +140,11 @@ def main() -> None:
 @click.option("--verbose", is_flag=True, help="Enable verbose logging")
 @click.option("--config", "config_path", default=None, help="Path to .mira.yaml")
 @click.option(
+    "--trust-execution-settings",
+    is_flag=True,
+    help="Operator-only: allow --config to set Codex command, auth home, sandbox, and timeout",
+)
+@click.option(
     "--no-walkthrough",
     is_flag=True,
     help="Skip walkthrough generation. Useful in dry-run loops where only the "
@@ -157,6 +162,7 @@ def review(
     output_format: str,
     verbose: bool,
     config_path: str | None,
+    trust_execution_settings: bool,
     no_walkthrough: bool,
 ) -> None:
     """Review a pull request or diff."""
@@ -168,6 +174,8 @@ def review(
 
     if not pr_url and not use_stdin:
         raise click.UsageError("Provide --pr <url> or --stdin")
+    if trust_execution_settings and config_path is None:
+        raise click.UsageError("--trust-execution-settings requires --config")
 
     overrides: dict[str, object] = {}
     if model:
@@ -180,7 +188,11 @@ def review(
         overrides["review.walkthrough"] = False
 
     try:
-        config = load_config(config_path, overrides)
+        config = load_config(
+            config_path,
+            overrides,
+            trust_execution_settings=trust_execution_settings,
+        )
     except MiraError as e:
         raise click.ClickException(str(e)) from e
 
@@ -188,6 +200,7 @@ def review(
 
     llm = create_llm(llm_config_for("review", config.llm))
     indexing_llm = create_llm(llm_config_for("indexing", config.llm))
+    security_llm = create_llm(llm_config_for("security", config.llm))
 
     git_token = token or github_token
     github_provider = None
@@ -216,7 +229,12 @@ def review(
             ) from err
 
     engine = ReviewEngine(
-        config=config, llm=llm, provider=github_provider, dry_run=dry_run, indexing_llm=indexing_llm
+        config=config,
+        llm=llm,
+        provider=github_provider,
+        dry_run=dry_run,
+        indexing_llm=indexing_llm,
+        security_llm=security_llm,
     )
 
     try:
