@@ -64,7 +64,7 @@ class ForgejoProvider(BaseProvider):
             raise ProviderError("Forgejo token is required")
         self._token = token
         self._api = profiles.resolve("forgejo")["api_url"] or "https://codeberg.org/api/v1"
-        self._base = profiles.resolve("forgejo")["base_url"] or "https://codeberg.org"
+self._base = profiles.resolve("forgejo").get("base_url") or "https://codeberg.org"
         self._username: str | None = None
 
     # ── low-level HTTP ──────────────────────────────────────────────
